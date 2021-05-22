@@ -38,6 +38,7 @@ async def show_async(
         client = await FullNodeRpcClient.create(self_hostname, uint16(rpc_port), DEFAULT_ROOT_PATH, config)
 
         if state:
+            print("")
             blockchain_state = await client.get_blockchain_state()
             if blockchain_state is None:
                 print("There is no blockchain found yet. Try again shortly")
@@ -50,23 +51,22 @@ async def show_async(
             total_iters = peak.total_iters if peak is not None else 0
             num_blocks: int = 10
 
-            print("\n##### Current State ########################################\n")
+            tabledata = []
 
             if sync_mode:
                 sync_max_block = blockchain_state["sync"]["sync_tip_height"]
                 sync_current_block = blockchain_state["sync"]["sync_progress_height"]
 
-                print(
-                    "Current Blockchain Status: Full Node syncing to block",
-                    sync_max_block,
-                    "\nCurrently synced to block:",
-                    sync_current_block,
-                )
+                tabledata.append(["Current Blockchain Status", f"Full Node syncing to block {sync_max_block}"])
+                tabledata.append(["Currently synced to block", f"sync_current_block"])
+
             if synced:
-                print("Current Blockchain Status: Full Node Synced")
-                print(f"\nPeak Hash:\t{peak.header_hash if peak is not None else ''}")
+                tabledata.append(["Current Blockchain Status", f"Full Node Synced"])
+                tabledata.append(["Peak Hash", f"{peak.header_hash if peak is not None else ''}"])
+
             elif peak is not None:
-                print(f"Current Blockchain Status: Not Synced. Peak height: {peak.height}")
+                tabledata.append(["Current Blockchain Status: Not Synced", f"Peak height: {peak.height}"])
+
             else:
                 print("\nSearching for an initial chain\n")
                 print("You may be able to expedite with 'chia show -a host:port' using a known node.\n")
@@ -82,27 +82,31 @@ async def show_async(
                     peak_time = curr.timestamp
                 peak_time_struct = struct_time(localtime(peak_time))
 
-                print(
-                    f"Peak Time:\t{time.strftime('%a %b %d %Y %T %Z', peak_time_struct)}",
-                    f"\nPeak Height:\t{peak.height}\n",
-                )
+                tabledata.append(["Peak Time", f"{time.strftime('%a %b %d %Y %T %Z', peak_time_struct)}"])
+                tabledata.append(["Peak Height", f"{peak.height}"])
 
-                print("Estimated network space: ", end="")
                 network_space_human_readable = blockchain_state["space"] / 1024 ** 4
                 if network_space_human_readable >= 1024:
                     network_space_human_readable = network_space_human_readable / 1024
                     if network_space_human_readable >= 1024:
                         network_space_human_readable = network_space_human_readable / 1024
-                        print(f"{network_space_human_readable:.3f} EiB")
+                        tabledata.append(["Estimated network space", f"{network_space_human_readable:.3f} EiB"])
                     else:
-                        print(f"{network_space_human_readable:.3f} PiB")
+                        tabledata.append(["Estimated network space", f"{network_space_human_readable:.3f} EiB"])
                 else:
-                    print(f"{network_space_human_readable:.3f} TiB")
-                print(f"Current difficulty: {difficulty}")
-                print(f"Current VDF sub_slot_iters: {sub_slot_iters}")
-                print("Total iterations since the start of the blockchain:", total_iters)
+                    tabledata.append(["Estimated network space", f"{network_space_human_readable:.3f} TiB"])
+
+                tabledata.append(["Current difficulty", f"{difficulty}"])
+                tabledata.append(["Current VDF sub_slot_iters", f"{sub_slot_iters}"])
+                tabledata.append(["Total iterations since the start of the blockchain", f"{total_iters}"])
+
+                table = AsciiTable(tabledata)
+                table.title = f" State "
+                print(table.table)
+
                 print("")
-                print(f"Height\t\tHash")
+
+                tabledata2 = [["Height", "Hash"]]
 
                 added_blocks: List[BlockRecord] = []
                 curr = await client.get_block_record(peak.header_hash)
@@ -111,7 +115,12 @@ async def show_async(
                     curr = await client.get_block_record(curr.prev_hash)
 
                 for b in added_blocks:
-                    print(f"{b.height}\t\t{b.header_hash}")
+                    tabledata2.append([f"{b.height}", f"{b.header_hash}"])
+
+                table = AsciiTable(tabledata2)
+                table.title = f" Heights "
+                print(table.table)
+
             else:
                 print("Blockchain has no blocks yet")
 
@@ -119,26 +128,9 @@ async def show_async(
 
         if show_connections:
             print("")
-            print("##### Connections ########################################")
-            print("")
 
             connections = await client.get_connections()
-
-            print(f"Total connections count : {len(connections)}")
-            print("")
-
-            #print(f"Type{sep}"
-            #     f"IP{sep}"
-            #     f"Ports{sep}"
-            #     f"NodeID{sep}"
-            #     f"Last Connect{sep}"
-            #     f"MiB Up|Dwn{sep}"
-            #     f"SB Height{sep}"
-            #     f"Hash")
-
-            table_data = [
-                ['Type', 'IP', 'Ports', 'NodeID', 'Last Connect', 'MiB Up|Dwn', 'SB Height', 'Hash']
-            ]
+            table_data = [['Type', 'IP', 'Ports', 'NodeID', 'Last Connect', 'MiB Up|Dwn', 'SB Height', 'Hash']]
 
             for con in connections:
                 last_connect_tuple = struct_time(localtime(con["last_message_time"]))
@@ -184,13 +176,15 @@ async def show_async(
                     ])
 
             table = AsciiTable(table_data)
+            table.title = f" Connections "
             print(table.table)
-
+            print(f"Total connections count : {len(connections)}")
             print("")
 
         if exit_node:
             node_stop = await client.stop_node()
             print(node_stop, "Node stopped")
+
         if add_connection:
             if ":" not in add_connection:
                 print("Enter a valid IP and port in the following format: 10.5.4.3:8000")
@@ -223,12 +217,14 @@ async def show_async(
                     elif result_txt == "":
                         result_txt = f"NodeID {remove_connection}... not found"
             print(result_txt)
+
         if block_header_hash_by_height != "":
             block_header = await client.get_block_record_by_height(block_header_hash_by_height)
             if block_header is not None:
                 print(f"Header hash of block {block_header_hash_by_height}: " f"{block_header.header_hash.hex()}")
             else:
                 print("Block height", block_header_hash_by_height, "not found")
+
         if block_by_header_hash != "":
             block: Optional[BlockRecord] = await client.get_block_record(hexstr_to_bytes(block_by_header_hash))
             full_block: Optional[FullBlock] = await client.get_block(hexstr_to_bytes(block_by_header_hash))
