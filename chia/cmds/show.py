@@ -1,4 +1,5 @@
 from typing import Any
+from terminaltables import AsciiTable
 
 import click
 
@@ -49,9 +50,12 @@ async def show_async(
             total_iters = peak.total_iters if peak is not None else 0
             num_blocks: int = 10
 
+            print("\n##### Current State ########################################\n")
+
             if sync_mode:
                 sync_max_block = blockchain_state["sync"]["sync_tip_height"]
                 sync_current_block = blockchain_state["sync"]["sync_progress_height"]
+
                 print(
                     "Current Blockchain Status: Full Node syncing to block",
                     sync_max_block,
@@ -60,7 +64,7 @@ async def show_async(
                 )
             if synced:
                 print("Current Blockchain Status: Full Node Synced")
-                print("\nPeak: Hash:", peak.header_hash if peak is not None else "")
+                print(f"\nPeak Hash:\t{peak.header_hash if peak is not None else ''}")
             elif peak is not None:
                 print(f"Current Blockchain Status: Not Synced. Peak height: {peak.height}")
             else:
@@ -79,9 +83,8 @@ async def show_async(
                 peak_time_struct = struct_time(localtime(peak_time))
 
                 print(
-                    "      Time:",
-                    f"{time.strftime('%a %b %d %Y %T %Z', peak_time_struct)}",
-                    f"                 Height: {peak.height:>10}\n",
+                    f"Peak Time:\t{time.strftime('%a %b %d %Y %T %Z', peak_time_struct)}",
+                    f"\nPeak Height:\t{peak.height}\n",
                 )
 
                 print("Estimated network space: ", end="")
@@ -99,7 +102,7 @@ async def show_async(
                 print(f"Current VDF sub_slot_iters: {sub_slot_iters}")
                 print("Total iterations since the start of the blockchain:", total_iters)
                 print("")
-                print("  Height: |   Hash:")
+                print(f"Height\t\tHash")
 
                 added_blocks: List[BlockRecord] = []
                 curr = await client.get_block_record(peak.header_hash)
@@ -108,20 +111,35 @@ async def show_async(
                     curr = await client.get_block_record(curr.prev_hash)
 
                 for b in added_blocks:
-                    print(f"{b.height:>9} | {b.header_hash}")
+                    print(f"{b.height}\t\t{b.header_hash}")
             else:
                 print("Blockchain has no blocks yet")
 
-            # if called together with show_connections, leave a blank line
-            if show_connections:
-                print("")
+            print("")
+
         if show_connections:
+            print("")
+            print("##### Connections ########################################")
+            print("")
+
             connections = await client.get_connections()
-            print("Connections:")
-            print(
-                "Type      IP                                     Ports       NodeID      Last Connect"
-                + "      MiB Up|Dwn"
-            )
+
+            print(f"Total connections count : {len(connections)}")
+            print("")
+
+            #print(f"Type{sep}"
+            #     f"IP{sep}"
+            #     f"Ports{sep}"
+            #     f"NodeID{sep}"
+            #     f"Last Connect{sep}"
+            #     f"MiB Up|Dwn{sep}"
+            #     f"SB Height{sep}"
+            #     f"Hash")
+
+            table_data = [
+                ['Type', 'IP', 'Ports', 'NodeID', 'Last Connect', 'MiB Up|Dwn', 'SB Height', 'Hash']
+            ]
+
             for con in connections:
                 last_connect_tuple = struct_time(localtime(con["last_message_time"]))
                 last_connect = time.strftime("%b %d %T", last_connect_tuple)
@@ -129,9 +147,11 @@ async def show_async(
                 mb_up = con["bytes_written"] / (1024 * 1024)
 
                 host = con["peer_host"]
+
                 # Strip IPv6 brackets
                 if host[0] == "[":
                     host = host[1:39]
+
                 # Nodetype length is 9 because INTRODUCER will be deprecated
                 if NodeType(con["type"]) is NodeType.FULL_NODE:
                     peak_height = con["peak_height"]
@@ -140,27 +160,34 @@ async def show_async(
                         peak_hash = "No Info"
                     if peak_height is None:
                         peak_height = 0
-                    con_str = (
-                        f"{NodeType(con['type']).name:9} {host:38} "
-                        f"{con['peer_port']:5}/{con['peer_server_port']:<5}"
-                        f" {con['node_id'].hex()[:8]}... "
-                        f"{last_connect}  "
-                        f"{mb_up:7.1f}|{mb_down:<7.1f}"
-                        f"\n                                                 "
-                        f"-SB Height: {peak_height:8.0f}    -Hash: {peak_hash[2:10]}..."
-                    )
+
+                    table_data.append([
+                        f"{NodeType(con['type']).name}",
+                        f"{host}",
+                        f"{con['peer_port']}/{con['peer_server_port']:<5}",
+                        f"{con['node_id'].hex()[:8]}",
+                        f"{last_connect}",
+                        f"{mb_up:7.1f} | {mb_down:<7.1f}",
+                        f"{peak_height:8.0f}",
+                        f"{peak_hash[2:10]}..."
+                    ])
                 else:
-                    con_str = (
-                        f"{NodeType(con['type']).name:9} {host:38} "
-                        f"{con['peer_port']:5}/{con['peer_server_port']:<5}"
-                        f" {con['node_id'].hex()[:8]}... "
-                        f"{last_connect}  "
-                        f"{mb_up:7.1f}|{mb_down:<7.1f}"
-                    )
-                print(con_str)
-            # if called together with state, leave a blank line
-            if state:
-                print("")
+                    table_data.append([
+                        f"{NodeType(con['type']).name:9}",
+                        f"{host}",
+                        f"{con['peer_port']:5}/{con['peer_server_port']:<5}",
+                        f"{con['node_id'].hex()[:8]}...",
+                        f"{last_connect}",
+                        f"{mb_up:7.1f} | {mb_down:<7.1f}",
+                        "",
+                        ""
+                    ])
+
+            table = AsciiTable(table_data)
+            print(table.table)
+
+            print("")
+
         if exit_node:
             node_stop = await client.stop_node()
             print(node_stop, "Node stopped")

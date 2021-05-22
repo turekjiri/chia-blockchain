@@ -119,6 +119,9 @@ python -m pip install wheel
 python -m pip install --extra-index-url https://pypi.chia.net/simple/ miniupnpc==2.1
 python -m pip install -e . --extra-index-url https://pypi.chia.net/simple/
 
+# terminaltables
+python -m pip install terminaltables
+
 echo ""
 echo "Chia blockchain install.sh complete."
 echo "For assistance join us on Keybase in the #testnet chat channel:"
